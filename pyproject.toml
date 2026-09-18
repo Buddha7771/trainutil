@@ -1,0 +1,42 @@
+[project]
+name = "trainutil"
+version = "0.1.0"
+description = "Simple, composable PyTorch training utilities"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Howon Lee", email = "hwlee7771@gmail.com" }]
+dependencies = ["torch>=2.4,<3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+  "pre-commit>=4.6,<5",
+  "pytest>=8.3,<9",
+  "ruff>=0.15,<0.16",
+  "ty>=0.0.35,<0.1",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812", # Conflicts with ruff formatter
+  "D100",
+  "D104",
+  "D105",
+  "D107",
+  "D203",
+  "D213",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN", "D", "INP001", "PLR2004", "S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
