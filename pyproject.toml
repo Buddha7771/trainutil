@@ -5,11 +5,18 @@ description = "Simple, composable PyTorch training utilities"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Howon Lee", email = "hwlee7771@gmail.com" }]
-dependencies = ["torch>=2.4,<3"]
+dependencies = [
+    "numpy>=2.2.6",
+    "torch>=2.4,<3",
+    "typing-extensions>=4.0",
+]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trainutil"]
 
 [dependency-groups]
 dev = [
@@ -25,15 +32,16 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["ALL"]
+extend-select = ["D417"] # Disabled by the numpy convention; keep Parameters complete
 ignore = [
   "COM812", # Conflicts with ruff formatter
   "D100",
   "D104",
   "D105",
-  "D107",
-  "D203",
-  "D213",
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN", "D", "INP001", "PLR2004", "S101"]
