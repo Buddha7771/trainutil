@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 import torch
 
-from trainutil import BaseBatch, move_to_device, pad_and_collate
+from trainutil import BaseBatch
+from trainutil.batch import move_to_device, pad_and_collate
 
 
 @dataclass

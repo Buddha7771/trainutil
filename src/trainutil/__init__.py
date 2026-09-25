@@ -1,3 +1,4 @@
-from trainutil.batch import BaseBatch, move_to_device, pad_and_collate
+from trainutil.batch import BaseBatch
+from trainutil.ema import EMA
 
-__all__ = ["BaseBatch", "move_to_device", "pad_and_collate"]
+__all__ = ["EMA", "BaseBatch"]

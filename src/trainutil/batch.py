@@ -18,31 +18,10 @@ def pad_and_collate(
     tensors: list[torch.Tensor],
     batch_dim: int | None = None,
 ) -> torch.Tensor:
-    """Pad tensors to a common shape, then stack or concatenate them.
+    """Zero-pad tensors to their largest shape, then stack or concatenate them.
 
-    Every dimension is zero-padded up to the largest size found across
-    ``tensors``. The dimension given by ``batch_dim`` is left as is and used for
-    concatenation instead.
-
-    Parameters
-    ----------
-    tensors : list[torch.Tensor]
-        Tensors with the same number of dimensions.
-    batch_dim : int, optional
-        Dimension to concatenate along. If None, tensors are stacked into a new
-        leading dimension.
-
-    Returns
-    -------
-    torch.Tensor
-        Padded and collated tensor.
-
-    Raises
-    ------
-    ValueError
-        If ``tensors`` is empty or the tensors differ in rank.
-    IndexError
-        If ``batch_dim`` is out of range for the tensor rank.
+    With ``batch_dim``, tensors are concatenated along it and that dimension is not
+    padded. Without it, they are stacked into a new leading dimension.
 
     """
     if not tensors:
@@ -100,21 +79,10 @@ def move_to_device(data: BatchT, device: str | torch.device) -> BatchT: ...
 
 
 def move_to_device(data: Any, device: str | torch.device) -> Any:
-    """Move tensors nested in ``data`` to a device.
+    """Return ``data`` with every nested tensor moved to ``device``.
 
-    Parameters
-    ----------
-    data : Any
-        A tensor, a :class:`BaseBatch`, or a dict, list, or tuple containing
-        them at any depth. Other objects are returned unchanged.
-    device : str or torch.device
-        Target device.
-
-    Returns
-    -------
-    Any
-        ``data`` with every tensor moved to ``device``. Containers are rebuilt
-        as plain dict, list, or tuple.
+    Recurses into BaseBatch, dict, list, and tuple, rebuilding containers as their plain
+    type. Other objects are returned unchanged.
 
     """
     if isinstance(data, torch.Tensor):
@@ -132,12 +100,10 @@ def move_to_device(data: Any, device: str | torch.device) -> Any:
 
 @dataclass
 class BaseBatch:
-    """Base class for dataclass batches with nested tensor fields.
+    """Base class for dataclass batches.
 
-    Subclasses declare their fields with ``@dataclass``. Supported field types
-    are ``torch.Tensor``, another :class:`BaseBatch`, ``list``, and ``None``.
-    Tensors and nested batches share a leading batch dimension; lists hold one
-    item per batch element.
+    Subclasses must be decorated with ``@dataclass``. Fields may be tensors or nested
+    batches sharing a leading batch dimension, lists with one item per element, or None.
 
     Examples
     --------
@@ -166,30 +132,10 @@ class BaseBatch:
 
     @classmethod
     def collate(cls, batches: list[Self]) -> Self:
-        """Collate batches of this exact type into one batch.
+        """Collate instances of exactly this class into one batch.
 
-        Tensor fields are padded with :func:`pad_and_collate` along every
-        dimension except the leading batch dimension, then concatenated. Nested
-        batch fields are collated recursively, list fields are concatenated, and
-        None fields stay None.
-
-        Parameters
-        ----------
-        batches : list[Self]
-            Non-empty list of instances of ``cls``.
-
-        Returns
-        -------
-        Self
-            Collated batch.
-
-        Raises
-        ------
-        ValueError
-            If ``batches`` is empty.
-        TypeError
-            If an item is not exactly ``cls``, a field holds mixed types across
-            batches, or a field type is unsupported.
+        Tensors are padded outside the batch dimension and concatenated, nested batches
+        are collated recursively, lists are concatenated, and None stays None.
 
         """
         if not batches:
@@ -226,19 +172,10 @@ class BaseBatch:
 
     @classmethod
     def from_sample(cls, **values: object) -> Self:
-        """Create a batch of size one from unbatched field values.
+        """Create a size-one batch from unbatched values.
 
-        Parameters
-        ----------
-        **values : object
-            One value per field. Tensors get a new leading dimension, nested
-            batches and None are kept as is, and any other value is wrapped in
-            a one-item list.
-
-        Returns
-        -------
-        Self
-            Batch with ``batch_size == 1``.
+        Tensors get a leading dimension, nested batches and None are kept, and other
+        values are wrapped in a one-item list.
 
         """
         batched: dict[str, object] = {}
@@ -283,27 +220,11 @@ class BaseBatch:
         return self.batch_size
 
     def __getitem__(self, index: SupportsIndex | slice) -> Self:
-        """Select batch elements, keeping the batch dimension.
+        """Select elements along the batch dimension.
 
-        Parameters
-        ----------
-        index : SupportsIndex or slice
-            Integer position or range along the batch dimension. Negative
-            positions count from the end.
-
-        Returns
-        -------
-        Self
-            Batch holding the selected elements. An integer index yields a
-            batch of size one.
-
-        Raises
-        ------
-        IndexError
-            If an integer position is out of bounds.
-        TypeError
-            If ``index`` is neither a slice nor integer-like, or a field type is
-            unsupported.
+        An integer index returns a batch of size one instead of dropping the dimension.
+        Negative and integer-like indices such as ``np.int64`` are accepted. Every field
+        is indexed the same way, and None fields stay None.
 
         """
         if not isinstance(index, slice):
