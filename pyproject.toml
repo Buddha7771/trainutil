@@ -11,6 +11,10 @@ dependencies = [
     "typing-extensions>=4.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/Buddha7771/trainutil"
+Issues = "https://github.com/Buddha7771/trainutil/issues"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
