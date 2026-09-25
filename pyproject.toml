@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Howon Lee", email = "hwlee7771@gmail.com" }]
 dependencies = [
-    "numpy>=2.2.6",
     "torch>=2.4,<3",
     "typing-extensions>=4.0",
 ]
@@ -20,6 +19,7 @@ packages = ["src/trainutil"]
 
 [dependency-groups]
 dev = [
+  "numpy>=2.2.6",
   "pre-commit>=4.6,<5",
   "pytest>=8.3,<9",
   "ruff>=0.15,<0.16",
