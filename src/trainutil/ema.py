@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from contextlib import AbstractContextManager
 
+    from torch import nn
+
 
 def _check_decay(decay: float) -> None:
     if not 0.0 <= decay <= 1.0:
@@ -17,46 +19,45 @@ def _check_decay(decay: float) -> None:
 
 
 class EMA:
-    """Exponential moving average of named tensors.
+    """Exponential moving average of a module's trainable parameters.
 
     Parameters
     ----------
-    params : Mapping[str, torch.Tensor]
-        Tensors to average, keyed by name.
+    module : nn.Module
+        Module whose ``requires_grad`` parameters are averaged. Pass the unwrapped
+        module, not a DDP or ``torch.compile`` wrapper, so that names match the
+        module's ``state_dict``.
     decay : float, optional
         Weight kept from the previous shadow at each update, in ``[0, 1]``.
 
     Examples
     --------
     >>> model = torch.nn.Linear(2, 1)
-    >>> ema = EMA({n: p for n, p in model.named_parameters() if p.requires_grad})
-    >>> ema.update(model.state_dict())
-    >>> with ema.swap(model.state_dict()):
+    >>> ema = EMA(model)
+    >>> ema.update()
+    >>> with ema.swap():
     ...     pass  # evaluate with the shadow
 
     """
 
-    def __init__(
-        self,
-        params: Mapping[str, torch.Tensor],
-        decay: float = 0.999,
-    ) -> None:
-        if not params:
-            msg = "params is empty; nothing to average"
+    def __init__(self, module: nn.Module, decay: float = 0.999) -> None:
+        self._params = {
+            name: param
+            for name, param in module.named_parameters()
+            if param.requires_grad
+        }
+        if not self._params:
+            msg = "module has no trainable parameters; nothing to average"
             raise ValueError(msg)
         _check_decay(decay)
         self.decay = decay
         self._shadow: dict[str, torch.Tensor] = {
-            name: tensor.detach().clone() for name, tensor in params.items()
+            name: param.detach().clone() for name, param in self._params.items()
         }
 
     @torch.no_grad()
-    def update(
-        self,
-        tensors: Mapping[str, torch.Tensor],
-        decay: float | None = None,
-    ) -> None:
-        """Set each shadow to ``decay * shadow + (1 - decay) * tensor``.
+    def update(self, decay: float | None = None) -> None:
+        """Set each shadow to ``decay * shadow + (1 - decay) * param``.
 
         ``decay`` overrides the constructor value for this call only.
         """
@@ -64,25 +65,24 @@ class EMA:
             decay = self.decay
         _check_decay(decay)
 
-        current = self._tracked(tensors)
         for name, shadow in self._shadow.items():
-            shadow.lerp_(current[name], 1.0 - decay)
+            shadow.lerp_(self._params[name], 1.0 - decay)
 
-    def swap(self, tensors: Mapping[str, torch.Tensor]) -> AbstractContextManager:
-        """Exchange tracked values in ``tensors`` with the shadow in place.
+    def swap(self) -> AbstractContextManager:
+        """Exchange the parameters with the shadow in place.
 
         Calling again undoes it. As a context manager, exit swaps back.
 
         Examples
         --------
-        >>> ema.swap(model.state_dict())  # model holds the shadow
-        >>> ema.swap(model.state_dict())  # model holds its own values again
-        >>> with ema.swap(model.state_dict()):
+        >>> ema.swap()  # model holds the shadow
+        >>> ema.swap()  # model holds its own values again
+        >>> with ema.swap():
         ...     pass  # model holds the shadow only inside the block
 
         """
-        self._exchange(tensors)
-        return _SwapGuard(self, tensors)
+        self._exchange()
+        return _SwapGuard(self)
 
     def state_dict(self) -> dict[str, torch.Tensor]:
         """Return the shadow keyed by name."""
@@ -117,31 +117,20 @@ class EMA:
         return self
 
     @torch.no_grad()
-    def _exchange(self, tensors: Mapping[str, torch.Tensor]) -> None:
-        current = self._tracked(tensors)
+    def _exchange(self) -> None:
         for name, shadow in self._shadow.items():
-            previous = current[name].detach().clone()
-            current[name].copy_(shadow)
+            param = self._params[name]
+            previous = param.detach().clone()
+            param.copy_(shadow)
             shadow.copy_(previous)
-
-    def _tracked(self, tensors: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        missing = [name for name in self._shadow if name not in tensors]
-        if missing:
-            msg = (
-                f"tensors has no entries named {missing[:5]}; "
-                "pass a mapping from the unwrapped module"
-            )
-            raise KeyError(msg)
-        return {name: tensors[name] for name in self._shadow}
 
 
 class _SwapGuard:
-    def __init__(self, ema: EMA, tensors: Mapping[str, torch.Tensor]) -> None:
+    def __init__(self, ema: EMA) -> None:
         self._ema = ema
-        self._tensors = tensors
 
     def __enter__(self) -> None:
         return None
 
     def __exit__(self, *exc: object) -> None:
-        self._ema.swap(self._tensors)
+        self._ema.swap()
