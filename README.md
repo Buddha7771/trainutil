@@ -35,12 +35,12 @@ batch.to("cuda")    # every tensor field moves
 ### EMA
 
 ```python
-ema = EMA({n: p for n, p in model.named_parameters() if p.requires_grad}, decay=0.999)
+ema = EMA(model, decay=0.999)  # averages the parameters with requires_grad
 
 optimizer.step()
-ema.update(model.state_dict())
+ema.update()
 
-with ema.swap(model.state_dict()):  # model holds the EMA weights inside the block
+with ema.swap():  # model holds the EMA weights inside the block
     validate(model)
 ```
 

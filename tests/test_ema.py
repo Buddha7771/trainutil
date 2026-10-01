@@ -12,54 +12,58 @@ def make_model() -> torch.nn.Linear:
     return model
 
 
-def trainable(model: torch.nn.Module) -> dict[str, torch.Tensor]:
-    return {n: p for n, p in model.named_parameters() if p.requires_grad}
-
-
-def test_update_moves_shadow_toward_tensors() -> None:
+def test_update_moves_shadow_toward_params() -> None:
     model = make_model()
-    ema = EMA(trainable(model), decay=0.9)
+    ema = EMA(model, decay=0.9)
     with torch.no_grad():
         model.weight.fill_(2.0)
 
-    ema.update(model.state_dict())
+    ema.update()
 
     torch.testing.assert_close(ema.state_dict()["weight"], torch.full((1, 2), 1.1))
     torch.testing.assert_close(model.weight, torch.full((1, 2), 2.0))
 
 
-def test_only_given_names_are_tracked() -> None:
+def test_only_trainable_params_are_tracked() -> None:
     model = make_model()
-    ema = EMA({"weight": model.weight})
+    model.bias.requires_grad = False
+    ema = EMA(model)
     with torch.no_grad():
         model.bias.fill_(5.0)
 
-    ema.update(model.state_dict())
-    ema.swap(model.state_dict())
+    ema.update()
+    ema.swap()
 
     assert set(ema.state_dict()) == {"weight"}
     torch.testing.assert_close(model.bias, torch.tensor([5.0]))
 
 
+def test_module_without_trainable_params_raises() -> None:
+    model = make_model().requires_grad_(requires_grad=False)
+
+    with pytest.raises(ValueError, match="no trainable parameters"):
+        EMA(model)
+
+
 def test_swap_exchanges_values_and_swaps_back_on_exit() -> None:
     model = make_model()
-    ema = EMA(trainable(model), decay=0.5)
+    ema = EMA(model, decay=0.5)
     with torch.no_grad():
         model.weight.fill_(3.0)
 
-    ema.update(model.state_dict())
-    ema.swap(model.state_dict())
+    ema.update()
+    ema.swap()
     torch.testing.assert_close(model.weight, torch.full((1, 2), 2.0))
     torch.testing.assert_close(ema.state_dict()["weight"], torch.full((1, 2), 3.0))
 
-    ema.swap(model.state_dict())
+    ema.swap()
     torch.testing.assert_close(model.weight, torch.full((1, 2), 3.0))
 
-    with ema.swap(model.state_dict()):
+    with ema.swap():
         torch.testing.assert_close(model.weight, torch.full((1, 2), 2.0))
     torch.testing.assert_close(model.weight, torch.full((1, 2), 3.0))
 
-    with pytest.raises(RuntimeError), ema.swap(model.state_dict()):
+    with pytest.raises(RuntimeError), ema.swap():
         raise RuntimeError
     torch.testing.assert_close(model.weight, torch.full((1, 2), 3.0))
     torch.testing.assert_close(ema.state_dict()["weight"], torch.full((1, 2), 2.0))
@@ -67,23 +71,23 @@ def test_swap_exchanges_values_and_swaps_back_on_exit() -> None:
 
 def test_update_accepts_per_call_decay() -> None:
     model = make_model()
-    ema = EMA(trainable(model), decay=0.999)
+    ema = EMA(model, decay=0.999)
     with torch.no_grad():
         model.weight.fill_(2.0)
 
-    ema.update(model.state_dict(), decay=0.0)
+    ema.update(decay=0.0)
 
     torch.testing.assert_close(ema.state_dict()["weight"], torch.full((1, 2), 2.0))
 
 
 def test_state_dict_roundtrip_and_key_mismatch() -> None:
     model = make_model()
-    ema = EMA(trainable(model), decay=0.5)
+    ema = EMA(model, decay=0.5)
     with torch.no_grad():
         model.weight.fill_(3.0)
-    ema.update(model.state_dict())
+    ema.update()
 
-    fresh = EMA(trainable(make_model()))
+    fresh = EMA(make_model())
     fresh.load_state_dict(ema.state_dict())
 
     torch.testing.assert_close(fresh.state_dict()["weight"], torch.full((1, 2), 2.0))
@@ -93,7 +97,13 @@ def test_state_dict_roundtrip_and_key_mismatch() -> None:
         fresh.load_state_dict({**ema.state_dict(), "weight": torch.zeros(1)})
 
 
+def test_state_dict_keys_match_module() -> None:
+    model = torch.nn.Sequential(torch.nn.Linear(2, 2), torch.nn.Linear(2, 1))
+
+    assert set(EMA(model).state_dict()) == set(model.state_dict())
+
+
 def test_to_moves_shadow() -> None:
-    ema = EMA(trainable(make_model())).to("meta")
+    ema = EMA(make_model()).to("meta")
 
     assert all(t.device.type == "meta" for t in ema.state_dict().values())
